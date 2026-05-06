@@ -1,3 +1,5 @@
+# DEBUG-BUDDY
+
 An AI-powered debugging assistant built on Cloudflare's developer platform. Paste any error or stack trace and get an instant explanation, root cause analysis, and exact fix — with memory across your session to detect recurring patterns.
 
 ## Live Demo
