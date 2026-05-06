@@ -10,7 +10,7 @@
 	"migrations": [
 		{
 			"new_sqlite_classes": [
-				"MyDurableObject"
+				"DebugSession"
 			],
 			"tag": "v1"
 		}
@@ -18,13 +18,16 @@
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "MyDurableObject",
+				"class_name": "DebugSession",
 				"name": "MY_DURABLE_OBJECT"
 			}
 		]
 	},
 	"observability": {
 		"enabled": true
+	},
+	"ai": {
+		"binding": "AI"
 	},
 	"upload_source_maps": true,
 	"compatibility_flags": [

@@ -1,64 +1,100 @@
 import { DurableObject } from "cloudflare:workers";
 
-/**
- * Welcome to Cloudflare Workers! This is your first Durable Objects application.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your Durable Object in action
- * - Run `npm run deploy` to publish your application
- *
- * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/durable-objects
- */
+// Durable Object — stores chat history per session
+export class DebugSession extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+  }
 
-/** A Durable Object's behavior is defined in an exported Javascript class */
-export class MyDurableObject extends DurableObject<Env> {
-	/**
-	 * The constructor is invoked once upon creation of the Durable Object, i.e. the first call to
-	 * 	`DurableObjectStub::get` for a given identifier (no-op constructors can be omitted)
-	 *
-	 * @param ctx - The interface for interacting with Durable Object state
-	 * @param env - The interface to reference bindings declared in wrangler.jsonc
-	 */
-	constructor(ctx: DurableObjectState, env: Env) {
-		super(ctx, env);
-	}
+  async getHistory(): Promise<{ role: string; content: string }[]> {
+    const history = await this.ctx.storage.get<{ role: string; content: string }[]>("history");
+    return history ?? [];
+  }
 
-	/**
-	 * The Durable Object exposes an RPC method sayHello which will be invoked when a Durable
-	 *  Object instance receives a request from a Worker via the same method invocation on the stub
-	 *
-	 * @param name - The name provided to a Durable Object instance from a Worker
-	 * @returns The greeting to be sent back to the Worker
-	 */
-	async sayHello(name: string): Promise<string> {
-		return `Hello, ${name}!`;
-	}
+  async addMessages(userMsg: string, assistantMsg: string): Promise<void> {
+    const history = await this.getHistory();
+    history.push({ role: "user", content: userMsg });
+    history.push({ role: "assistant", content: assistantMsg });
+    await this.ctx.storage.put("history", history);
+  }
+
+  async clearHistory(): Promise<void> {
+    await this.ctx.storage.delete("history");
+  }
 }
 
+// Main Worker
 export default {
-	/**
-	 * This is the standard fetch handler for a Cloudflare Worker
-	 *
-	 * @param request - The request submitted to the Worker from the client
-	 * @param env - The interface to reference bindings declared in wrangler.jsonc
-	 * @param ctx - The execution context of the Worker
-	 * @returns The response to be sent back to the client
-	 */
-	async fetch(request, env, ctx): Promise<Response> {
-		// Create a stub to open a communication channel with the Durable Object
-		// instance named "foo".
-		//
-		// Requests from all Workers to the Durable Object instance named "foo"
-		// will go to a single remote Durable Object instance.
-		const stub = env.MY_DURABLE_OBJECT.getByName("foo");
+  async fetch(request: Request, env: Env): Promise<Response> {
 
-		// Call the `sayHello()` RPC method on the stub to invoke the method on
-		// the remote Durable Object instance.
-		const greeting = await stub.sayHello("world");
+    // CORS headers so the frontend can talk to this
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
 
-		return new Response(greeting);
-	},
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: corsHeaders });
+    }
+
+    const url = new URL(request.url);
+
+    // POST /debug — main endpoint
+    if (request.method === "POST" && url.pathname === "/debug") {
+      const body = await request.json<{ sessionId: string; message: string }>();
+      const { sessionId, message } = body;
+
+      if (!sessionId || !message) {
+        return new Response(JSON.stringify({ error: "sessionId and message required" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+
+      // Get the Durable Object for this session
+      const stub = env.MY_DURABLE_OBJECT.getByName(sessionId);
+      const history = await stub.getHistory();
+
+      // Build messages for the LLM
+      const systemPrompt = {
+        role: "system",
+        content: `You are DebugBuddy, an expert programming assistant specialized in debugging errors and stack traces. 
+When given an error:
+1. Identify what language/framework it is
+2. Explain clearly what went wrong and why
+3. Give the exact fix with a code example
+4. If you see a pattern across multiple errors in this session, point it out.
+Be concise, practical, and direct.`,
+      };
+
+      const messages = [systemPrompt, ...history, { role: "user", content: message }];
+
+      // Call Workers AI
+      const aiResponse = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
+        messages,
+      });
+
+      const assistantMessage = aiResponse.response ?? "Sorry, I could not generate a response.";
+
+      // Save to Durable Object
+      await stub.addMessages(message, assistantMessage);
+
+      return new Response(JSON.stringify({ response: assistantMessage }), {
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    // POST /clear — reset session history
+    if (request.method === "POST" && url.pathname === "/clear") {
+      const body = await request.json<{ sessionId: string }>();
+      const stub = env.MY_DURABLE_OBJECT.getByName(body.sessionId);
+      await stub.clearHistory();
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    return new Response("DebugBuddy API is running", { headers: corsHeaders });
+  },
 } satisfies ExportedHandler<Env>;

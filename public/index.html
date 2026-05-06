@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DebugBuddy</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 16px 24px;
+      background: #1a1d27;
+      border-bottom: 1px solid #2a2d3a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    header h1 { font-size: 1.2rem; color: #f6821f; }
+    header span { font-size: 0.8rem; color: #555; }
+
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .message-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .message-row.user { align-items: flex-end; }
+    .message-row.assistant { align-items: flex-start; }
+
+    .message-label {
+      font-size: 0.72rem;
+      color: #555;
+      padding: 0 4px;
+    }
+
+    .message {
+      max-width: 80%;
+      padding: 14px 18px;
+      border-radius: 12px;
+      line-height: 1.7;
+      font-size: 0.9rem;
+    }
+
+    .user .message {
+      background: #f6821f18;
+      border: 1px solid #f6821f33;
+      color: #f0c090;
+      white-space: pre-wrap;
+    }
+
+    .assistant .message {
+      background: #1e2130;
+      border: 1px solid #2a2d3a;
+      color: #e0e0e0;
+      width: 80%;
+    }
+
+    /* Markdown styles inside assistant message */
+    .assistant .message p { margin-bottom: 10px; }
+    .assistant .message p:last-child { margin-bottom: 0; }
+    .assistant .message strong { color: #f6821f; }
+    .assistant .message em { color: #aaa; }
+
+    .assistant .message ul, .assistant .message ol {
+      margin: 8px 0 8px 20px;
+    }
+
+    .assistant .message li { margin-bottom: 4px; }
+
+    .assistant .message pre {
+      background: #0d1117;
+      border: 1px solid #2a2d3a;
+      border-radius: 8px;
+      padding: 14px;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+
+    .assistant .message code {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.85rem;
+    }
+
+    .assistant .message p code {
+      background: #0d1117;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #f6821f;
+      font-size: 0.85rem;
+    }
+
+    .assistant .message h1, .assistant .message h2, .assistant .message h3 {
+      color: #f6821f;
+      margin: 14px 0 8px;
+    }
+
+    .thinking {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #555;
+      font-size: 0.85rem;
+      padding: 4px 0;
+    }
+
+    .dot-flashing {
+      display: flex;
+      gap: 4px;
+    }
+
+    .dot-flashing span {
+      width: 6px;
+      height: 6px;
+      background: #f6821f;
+      border-radius: 50%;
+      animation: blink 1.2s infinite;
+    }
+
+    .dot-flashing span:nth-child(2) { animation-delay: 0.2s; }
+    .dot-flashing span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.2; }
+      40% { opacity: 1; }
+    }
+
+    #input-area {
+      padding: 16px 24px;
+      background: #1a1d27;
+      border-top: 1px solid #2a2d3a;
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    textarea {
+      flex: 1;
+      background: #0f1117;
+      border: 1px solid #2a2d3a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      resize: none;
+      min-height: 44px;
+      max-height: 160px;
+      font-family: inherit;
+      outline: none;
+      line-height: 1.5;
+    }
+
+    textarea:focus { border-color: #f6821f88; }
+    textarea::placeholder { color: #444; }
+
+    button {
+      background: #f6821f;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      height: 44px;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+
+    button:hover { background: #e07010; }
+    button:disabled { background: #333; color: #555; cursor: not-allowed; }
+
+    #clear-btn {
+      background: transparent;
+      border: 1px solid #2a2d3a;
+      color: #555;
+      padding: 10px 14px;
+      font-size: 1rem;
+    }
+
+    #clear-btn:hover { border-color: #f6821f88; color: #f6821f; background: transparent; }
+
+    .empty-state {
+      margin: auto;
+      text-align: center;
+      color: #333;
+      padding: 40px;
+    }
+
+    .empty-state .icon { font-size: 3rem; margin-bottom: 16px; }
+    .empty-state h2 { font-size: 1.4rem; color: #f6821f; margin-bottom: 8px; }
+    .empty-state p { font-size: 0.9rem; color: #444; margin-bottom: 6px; }
+
+    .examples {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .example-chip {
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      color: #666;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .example-chip:hover {
+      border-color: #f6821f88;
+      color: #f6821f;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>🐛 DebugBuddy</h1>
+    <span>Powered by Cloudflare Workers AI</span>
+  </div>
+</header>
+
+<div id="chat">
+  <div class="empty-state">
+    <div class="icon">🔍</div>
+    <h2>Paste your error. Get your fix.</h2>
+    <p>Supports C++, Python, Java, JavaScript, Rust, Go and more.</p>
+    <p style="color:#333; font-size:0.8rem;">Shift+Enter for new line · Enter to send</p>
+    <div class="examples">
+      <div class="example-chip" onclick="tryExample(this)">Segmentation fault</div>
+      <div class="example-chip" onclick="tryExample(this)">NullPointerException</div>
+      <div class="example-chip" onclick="tryExample(this)">TypeError: undefined is not a function</div>
+      <div class="example-chip" onclick="tryExample(this)">Cannot read properties of null</div>
+    </div>
+  </div>
+</div>
+
+<div id="input-area">
+  <textarea id="input" placeholder="Paste your error or stack trace here..." rows="1"></textarea>
+  <button id="clear-btn" title="New session">↺</button>
+  <button id="send-btn">Debug it</button>
+</div>
+
+<script>
+    const WORKER_URL = 'https://cf-ai-debugbuddy.abhishek14104.workers.dev';
+
+  let sessionId = localStorage.getItem('debugbuddy-session') || crypto.randomUUID();
+  localStorage.setItem('debugbuddy-session', sessionId);
+
+  const chat = document.getElementById('chat');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send-btn');
+  const clearBtn = document.getElementById('clear-btn');
+
+  // Configure marked
+  marked.setOptions({ breaks: true });
+
+  function removeEmptyState() {
+    const empty = chat.querySelector('.empty-state');
+    if (empty) empty.remove();
+  }
+
+  function addMessage(role, text) {
+    removeEmptyState();
+
+    const row = document.createElement('div');
+    row.className = `message-row ${role}`;
+
+    const label = document.createElement('div');
+    label.className = 'message-label';
+    label.textContent = role === 'user' ? 'You' : 'DebugBuddy';
+
+    const div = document.createElement('div');
+    div.className = 'message';
+
+    if (role === 'assistant') {
+      div.innerHTML = marked.parse(text);
+      // Syntax highlight all code blocks
+      div.querySelectorAll('pre code').forEach(block => {
+        hljs.highlightElement(block);
+      });
+    } else {
+      div.textContent = text;
+    }
+
+    row.appendChild(label);
+    row.appendChild(div);
+    chat.appendChild(row);
+    chat.scrollTop = chat.scrollHeight;
+    return row;
+  }
+
+  function addThinking() {
+    removeEmptyState();
+    const div = document.createElement('div');
+    div.className = 'thinking';
+    div.innerHTML = `<span>DebugBuddy is analyzing</span>
+      <div class="dot-flashing">
+        <span></span><span></span><span></span>
+      </div>`;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return div;
+  }
+
+  async function sendMessage() {
+    const message = input.value.trim();
+    if (!message || sendBtn.disabled) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    addMessage('user', message);
+    const thinking = addThinking();
+
+    try {
+      const res = await fetch(`${WORKER_URL}/debug`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, message }),
+      });
+
+      const data = await res.json();
+      thinking.remove();
+      addMessage('assistant', data.response);
+    } catch (err) {
+      thinking.remove();
+      addMessage('assistant', '**Error:** Could not reach DebugBuddy. Is the Worker running?');
+    }
+
+    sendBtn.disabled = false;
+    input.focus();
+  }
+
+  async function clearSession() {
+    try {
+      await fetch(`${WORKER_URL}/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+    } catch(_) {}
+
+    sessionId = crypto.randomUUID();
+    localStorage.setItem('debugbuddy-session', sessionId);
+    chat.innerHTML = `<div class="empty-state">
+      <div class="icon">🔍</div>
+      <h2>Paste your error. Get your fix.</h2>
+      <p>Supports C++, Python, Java, JavaScript, Rust, Go and more.</p>
+      <p style="color:#333; font-size:0.8rem;">Shift+Enter for new line · Enter to send</p>
+      <div class="examples">
+        <div class="example-chip" onclick="tryExample(this)">Segmentation fault</div>
+        <div class="example-chip" onclick="tryExample(this)">NullPointerException</div>
+        <div class="example-chip" onclick="tryExample(this)">TypeError: undefined is not a function</div>
+        <div class="example-chip" onclick="tryExample(this)">Cannot read properties of null</div>
+      </div>
+    </div>`;
+  }
+
+  function tryExample(chip) {
+    input.value = chip.textContent;
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+    input.focus();
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  clearBtn.addEventListener('click', clearSession);
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+  });
+</script>
+
+</body>
+</html>
